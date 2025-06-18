@@ -1,5 +1,5 @@
 obj:
-  bg_color: 0x42495A
+  bg_color: 0x04C95 
   text_color: 0xFFFFFF
 button:
   bg_color: 0x5A6173
