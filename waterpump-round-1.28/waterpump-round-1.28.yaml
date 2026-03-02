@@ -19,6 +19,13 @@ logger:
 
 # Enable Home Assistant API
 api:
+  # Provide time to the device from HA
+  reboot_timeout: 0s
+
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+
 
 ota:
   - platform: esphome
@@ -33,12 +40,12 @@ wifi:
 captive_portal:
 
 globals:
-  - id: propeller_angle
-    type: float
-    initial_value: '0.0'
   - id: debug_logging
     type: bool
     initial_value: 'true'
+  - id: pump_start_time
+    type: uint32_t
+    initial_value: '0'
 
 binary_sensor:
   - platform: homeassistant
@@ -46,24 +53,13 @@ binary_sensor:
     entity_id: switch.waterpump_plug
     on_press:
       then:
-        - script.execute: spin_propeller
+        - lambda: 'id(pump_start_time) = millis();'
+        - component.update: my_display
     on_release:
       then:
-        - script.stop: spin_propeller
+        - lambda: 'id(pump_start_time) = 0;'
+        - component.update: my_display
 
-script:
-  - id: spin_propeller
-    mode: restart
-    then:
-      - while:
-          condition:
-            lambda: 'return true;'
-          then:
-            - lambda: |-
-                id(propeller_angle) += 10.0;
-                if (id(propeller_angle) >= 360.0) id(propeller_angle) -= 360.0;
-            - delay: 50ms
-            - component.update: my_display
 
 color:
   - id: my_black
@@ -78,6 +74,26 @@ color:
     red: 20%
     green: 60%
     blue: 100%
+  - id: my_green
+    red: 0%
+    green: 100%
+    blue: 0%
+  - id: my_red
+    red: 100%
+    green: 0%
+    blue: 0%
+  - id: my_gray
+    red: 0.2
+    green: 0.2
+    blue: 0.2
+  - id: my_matte_green
+    red: 0.2
+    green: 0.6
+    blue: 0.2
+  - id: my_matte_red
+    red: 0.6
+    green: 0.2
+    blue: 0.2
 
 font:
   - file: "gfonts://Roboto"
@@ -110,24 +126,100 @@ display:
       
       int cx = it.get_width() / 2;
       int cy = it.get_height() / 2;
-      int r = 60;
-      float angle_rad = id(propeller_angle) * M_PI / 180.0;
 
-      // Draw 3 propeller blades
-      for (int i = 0; i < 3; i++) {
-        float a = angle_rad + i * 2.0 * M_PI / 3.0;
-        int x = cx + r * cos(a);
-        int y = cy + r * sin(a);
-        it.line(cx, cy, x, y, id(my_blue));
-        // Draw a small circle at the end of each blade for thickness
-        it.filled_circle(x, y, 5, id(my_blue));
+      // Draw Progress Ring (2/3 arc, bottom gap)
+      int r_ring = 115;
+      float start_angle = 150.0f;
+      float end_angle = 390.0f;
+      float total_arc = end_angle - start_angle;
+      float total_arc_inv = 1.0f / total_arc;
+      float deg_to_rad = M_PI / 180.0f;
+      
+      // Draw background ring (thin gray outline)
+      for (float a = start_angle; a <= end_angle; a += 2.0f) {
+        float rad1 = a * deg_to_rad;
+        float rad2 = (a + 2.0f) * deg_to_rad;
+        it.line(cx + r_ring * cos(rad1), cy + r_ring * sin(rad1), 
+                cx + r_ring * cos(rad2), cy + r_ring * sin(rad2), id(my_gray));
       }
+
+      if (id(pump_state).state) {
+        uint32_t elapsed = (millis() - id(pump_start_time)) / 1000;
+        float progress = std::min((float)elapsed / 1200.0f, 1.0f); // 20 mins = 1200s
+        
+        // Shrink counter-clockwise: the right end (end_angle) moves towards the left (start_angle)
+        float current_end = end_angle - (progress * total_arc);
+
+        // Draw progress ring segments
+        float last_x = -1, last_y = -1;
+        float last_thickness = -1;
+
+        for (float a = start_angle; a <= current_end; a += 1.0f) { // Finer step for smoothness
+          float p_spatial = (a - start_angle) * total_arc_inv;
+          
+          // Color interpolation: Matte Green (p=1) to Matte Red (p=0)
+          int r_val = (int)(255.0f * (0.6f * (1.0f - p_spatial) + 0.2f * p_spatial));
+          int g_val = (int)(255.0f * (0.2f * (1.0f - p_spatial) + 0.6f * p_spatial));
+          int b_val = (int)(255.0f * 0.2f);
+          Color progress_color = Color(r_val, g_val, b_val);
+
+          float thickness = 4.0f + (p_spatial * 12.0f); 
+          float rad = a * deg_to_rad;
+          float x = cx + r_ring * cos(rad);
+          float y = cy + r_ring * sin(rad);
+
+          if (last_x != -1) {
+            // Draw a line to bridge the gap and avoid "dots"
+            it.line(last_x, last_y, x, y, progress_color);
+            // Optionally draw triangles or multiple lines for true thickness, 
+            // but for 1 degree steps, filled circles are better if we overlap enough.
+          }
+          it.filled_circle(x, y, (int)thickness, progress_color);
+          
+          last_x = x; last_y = y;
+        }
+      }
+
+      // Center Button (On/Off)
+      int r_button = 60;
+      bool is_on = id(pump_state).state;
+      Color button_color = is_on ? id(my_matte_green) : id(my_matte_red);
       
-      // Center hub
-      it.filled_circle(cx, cy, 8, id(my_white));
-      
-      // Text "Waterpump" below the propeller
+      // Button outline (matching timer outline)
+      it.circle(cx, cy, r_button + 1, id(my_gray));
+      it.circle(cx, cy, r_button + 2, id(my_gray)); // 2px thick for better visibility
+
+      it.filled_circle(cx, cy, r_button, button_color);
+
+      // Label on the button
+      it.print(cx, cy, id(roboto_font), id(my_white), TextAlign::CENTER, is_on ? "ON" : "OFF");
+
+      // Text "Waterpump" below the button
       it.print(cx, cy + 85, id(roboto_font), id(my_white), TextAlign::CENTER, "Waterpump");
+
+      // Curved Time above the button
+      auto time_now = id(homeassistant_time).now();
+      if (time_now.is_valid()) {
+        char buffer[10];
+        time_now.strftime(buffer, sizeof(buffer), "%H:%M");
+        std::string time_str = buffer;
+        
+        int r_text = 82; // Radius for the text arc
+        float total_angle_width = 40.0f; // Total arc width in degrees for the time
+        float start_angle_text = 270.0f - (total_angle_width / 2.0f);
+        float step_angle = total_angle_width / (time_str.length() - 1);
+        
+        for (size_t i = 0; i < time_str.length(); i++) {
+          float angle = (start_angle_text + i * step_angle) * M_PI / 180.0f;
+          int tx = cx + r_text * cos(angle);
+          int ty = cy + r_text * sin(angle);
+          
+          char c_str[2] = {time_str[i], '\0'};
+          // Print each character. Note: rotation is not supported per-character in basic print, 
+          // but positioning them on an arc gives the curved effect.
+          it.print(tx, ty, id(roboto_font), id(my_white), TextAlign::CENTER, c_str);
+        }
+      }
 
 touchscreen:
   - platform: cst816
