@@ -96,8 +96,8 @@ color:
     blue: 0.2
 
 font:
-  - file: "gfonts://Roboto"
-    id: roboto_font
+  - file: "gfonts://Jost"
+    id: my_font
     size: 24
 
 spi:
@@ -192,33 +192,18 @@ display:
       it.filled_circle(cx, cy, r_button, button_color);
 
       // Label on the button
-      it.print(cx, cy, id(roboto_font), id(my_white), TextAlign::CENTER, is_on ? "ON" : "OFF");
+      it.print(cx, cy, id(my_font), id(my_white), TextAlign::CENTER, is_on ? "ON" : "OFF");
+
+      // Label on the button
+      it.print(cx, cy, id(my_font), id(my_white), TextAlign::CENTER, is_on ? "ON" : "OFF");
 
       // Text "Waterpump" below the button
-      it.print(cx, cy + 85, id(roboto_font), id(my_white), TextAlign::CENTER, "Waterpump");
+      it.print(cx, cy + 85, id(my_font), id(my_white), TextAlign::CENTER, "Waterpump");
 
-      // Curved Time above the button
+      // Time above the button
       auto time_now = id(homeassistant_time).now();
       if (time_now.is_valid()) {
-        char buffer[10];
-        time_now.strftime(buffer, sizeof(buffer), "%H:%M");
-        std::string time_str = buffer;
-        
-        int r_text = 82; // Radius for the text arc
-        float total_angle_width = 40.0f; // Total arc width in degrees for the time
-        float start_angle_text = 270.0f - (total_angle_width / 2.0f);
-        float step_angle = total_angle_width / (time_str.length() - 1);
-        
-        for (size_t i = 0; i < time_str.length(); i++) {
-          float angle = (start_angle_text + i * step_angle) * M_PI / 180.0f;
-          int tx = cx + r_text * cos(angle);
-          int ty = cy + r_text * sin(angle);
-          
-          char c_str[2] = {time_str[i], '\0'};
-          // Print each character. Note: rotation is not supported per-character in basic print, 
-          // but positioning them on an arc gives the curved effect.
-          it.print(tx, ty, id(roboto_font), id(my_white), TextAlign::CENTER, c_str);
-        }
+        it.strftime(cx, cy - 85, id(my_font), id(my_white), TextAlign::CENTER, "%H:%M", time_now);
       }
 
 touchscreen:
