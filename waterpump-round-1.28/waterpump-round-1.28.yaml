@@ -1,0 +1,95 @@
+esphome:
+  name: waterpump-round-1-28
+  friendly_name: Waterpump Round 1.28
+  on_boot:
+    priority: -10
+    then:
+      - light.turn_on: 
+          id: backlight
+          brightness: 100%
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+  level: DEBUG
+
+# Enable Home Assistant API
+api:
+
+ota:
+  - platform: esphome
+
+wifi:
+  # Configure your WIFI settings here or use secrets
+  ap:
+    ssid: "Waterpump-Fallback-AP"
+
+captive_portal:
+
+color:
+  - id: my_black
+    red: 0%
+    green: 0%
+    blue: 0%
+  - id: my_white
+    red: 100%
+    green: 100%
+    blue: 100%
+
+font:
+  - file: "gfonts://Roboto"
+    id: roboto_font
+    size: 28
+
+spi:
+  clk_pin: GPIO14  # Definitive for GC9A01 v1.1
+  mosi_pin: GPIO13
+
+i2c:
+  sda: GPIO38
+  scl: GPIO39
+  scan: true
+  id: bus_a
+
+display:
+  - platform: ili9xxx
+    model: GC9A01A
+    id: my_display
+    cs_pin: GPIO15
+    dc_pin: GPIO21
+    reset_pin: GPIO11
+    rotation: 0
+    data_rate: 40MHz
+    invert_colors: true
+    color_order: BGR
+    lambda: |-
+      it.fill(id(my_black));
+      it.print(it.get_width() / 2, it.get_height() / 2, id(roboto_font), id(my_white), TextAlign::CENTER, "Test");
+
+touchscreen:
+  - platform: cst816
+    id: my_touch
+    display: my_display
+    interrupt_pin: GPIO40  # Definitive for GC9A01 v1.1
+    reset_pin: GPIO16
+    on_touch:
+      - lambda: |-
+          ESP_LOGI("touch", "Touch at x=%d, y=%d", touch.x, touch.y);
+
+# Backlight control
+output:
+  - platform: ledc
+    pin: GPIO45
+    id: backlight_pwm
+    frequency: 5000Hz
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: "Display Backlight"
+    id: backlight
+    restore_mode: ALWAYS_ON
